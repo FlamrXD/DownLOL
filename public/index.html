@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Downlol | Free YT Downloader</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <main>
+        <div class="row">
+            <input type="text" id="url" placeholder="Enter YouTube URL or Video ID">
+            <button id="downloadBtn">Download</button>
+        </div>
+
+        <div class="settings">
+            <button id="settingsToggle" type="button" aria-expanded="false">Settings ▾</button>
+            <div id="settingsPanel" hidden>
+                <label>
+                    Type
+                    <select id="type">
+                        <option value="video">Video</option>
+                        <option value="audio">Audio</option>
+                    </select>
+                </label>
+                <label>
+                    Format
+                    <select id="format"></select>
+                </label>
+                <label>
+                    Quality
+                    <select id="quality"></select>
+                </label>
+            </div>
+        </div>
+
+        <p id="status"></p>
+        <div id="progress" hidden><div id="bar"></div></div>
+        <p id="status"></p>
+    </main>
+    <script src="js/settings.js"></script>
+    </script>
+    <script src="js/client.js"></script>
+</body>
+
+</html>

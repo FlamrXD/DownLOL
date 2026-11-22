@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Montenegrin+Gothic+One&family=Stack+Sans+Text:wght@200..700&family=TikTok+Sans:opsz,wght@12..36,300..900&display=swap');
+
+body {
+    margin: 0;
+    background-color: #120b0b;
+    font-family: "Stack Sans Text", sans-serif;
+    color:white;
+}
+
+
+main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    height: 100vh;
+    font-family: "Stack Sans Text", sans-serif;
+}
+
+.row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+.settings {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+#settingsToggle {
+    background: none;
+    border: none;
+    color: #a5a4a4;
+    font-size: 14px;
+    font-family: "Stack Sans Text", sans-serif;
+    cursor: pointer;
+}
+#settingsToggle:hover {
+    color: white;
+}
+
+#settingsPanel {
+    display: flex;
+    gap: 16px;
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #46444467;
+    border: 3px solid #464444;
+}
+#settingsPanel[hidden] {
+    display: none;
+}
+
+#settingsPanel label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+    color: #a5a4a4;
+}
+
+#settingsPanel select {
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 5px;
+    background-color: #120b0b;
+    color: white;
+    border: 3px solid #464444;
+    font-family: "Stack Sans Text", sans-serif;
+}
+#settingsPanel select:hover {
+    border-color: #a5a4a4;
+}
+#url {
+    width: 30%;
+    padding: 15px;
+    font-size: 16px;
+    border-radius: 5px;
+    background-color: #46444467;
+    color: white;
+    font-family: "Stack Sans Text", sans-serif;
+    border-color: #464444;
+    border-width: 3px;
+    shadow:none;
+    border-style: solid;
+}
+
+#downloadBtn {
+    margin-left: 10px;
+    padding: 15px 30px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: none;
+    background-color: #46444467;
+    color: white;
+    font-family: "Stack Sans Text", sans-serif;
+    border-color: #464444;
+    border-width: 3px;
+    shadow:none;
+    border-style: solid;
+}
+#url:hover {
+    border-color: #a5a4a4;
+}
+#downloadBtn:hover {
+    background-color: #464444;
+    cursor: pointer;
+}
+#progress {
+    width: 30%;
+    min-width: 280px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: #46444467;
+    border: 1px solid #464444;
+    overflow: hidden;
+}
+#progress[hidden] {
+    display: none;
+}
+
+#bar {
+    width: 0%;
+    height: 100%;
+    background-color: white;
+    transition: width 0.2s ease;
+}
+#bar.error {
+    background-color: #e5484d;
+}
+#bar.indeterminate {
+    width: 40%;
+    animation: slide 1s ease-in-out infinite alternate;
+}
+@keyframes slide {
+    from { margin-left: 0; }
+    to   { margin-left: 60%; }
+}
+
+#status {
+    font-size: 14px;
+    color: #a5a4a4;
+    min-height: 1.2em;
+    margin: 0;
+}
+#status.error {
+    color: #e5484d;
+}
