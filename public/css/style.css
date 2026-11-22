@@ -151,3 +151,16 @@ main {
 #status.error {
     color: #e5484d;
 }
+
+footer{
+    text-align: center;
+    font-size: 12px;
+}
+a{
+    color: #a5a4a4;
+    text-decoration: none;
+}
+a:hover{
+    color: #ffffff;
+    text-decoration: none;
+}
