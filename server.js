@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const app = express();
-app.set('trust proxy', 1);z
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static('public'));
 
