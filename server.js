@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-
+const YTDLP = process.env.YTDLP_PATH || 'yt-dlp';
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
@@ -139,7 +139,7 @@ app.post('/api/start', async (req, res) => {
     };
     jobs.set(jobId, job);
 
-    const proc = spawn('yt-dlp', args);
+    const proc = spawn(YTDLP, args);
     job.proc = proc;
 
     pipeLines(proc.stdout, l => handleLine(job, l, false));
@@ -201,4 +201,4 @@ app.get('/api/file/:id', (req, res) => {
     res.download(path.join(job.dir, job.file), job.file, () => destroyJob(req.params.id));
 });
 
-app.listen(3000, () => console.log('http://localhost:3000'));
+app.listen(process.env.PORT || 3000, () => console.log('listening'));
