@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const app = express();
+app.set('trust proxy', 1);z
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -18,9 +19,20 @@ const VIDEO_FORMATS = ['mp4', 'webm'];
 const AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'wav'];
 const VIDEO_QUALITIES = ['best', '1080', '720', '480', '360'];
 const AUDIO_QUALITIES = ['best', '320', '192', '128', '64'];
-const JOB_TTL_MS = 15 * 60 * 1000;
+const JOB_TTL_MS = 15 * 60 * 1000;         
+// MAX_CONCURRENT: max number of jobs running at once
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT || 3);
+// MAX_QUEUE: max number of jobs waiting for a slot
+const MAX_QUEUE = Number(process.env.MAX_QUEUE || 10);
+// MAX_JOBS_PER_IP: max number of jobs per IP (running + queued)
+const MAX_JOBS_PER_IP = Number(process.env.MAX_JOBS_PER_IP || 1);
+const DISCONNECT_GRACE_MS = 60 * 1000;
+const RUN_TIMEOUT_MS = 10 * 60 * 1000;
+const KEEPALIVE_MS = 15 * 1000;
 
 const jobs = new Map();
+const queue = [];   // job ids waiting for a slot
+let running = 0;
 
 function extractId(input) {
     input = (input || '').trim();
@@ -44,14 +56,59 @@ function emit(job, event, data) {
     for (const res of job.clients) res.write(msg);
 }
 
+function broadcastQueue() {
+    queue.forEach((id, i) => {
+        const j = jobs.get(id);
+        if (j) emit(j, 'queued', { position: i + 1, total: queue.length });
+    });
+}
+
 function destroyJob(id) {
     const job = jobs.get(id);
     if (!job) return;
     clearTimeout(job.timer);
-    job.proc?.kill();
+    clearTimeout(job.graceTimer);
+    const qi = queue.indexOf(id);
+    if (qi !== -1) { queue.splice(qi, 1); broadcastQueue(); }
+    job.proc?.kill('SIGKILL'); // 'close' handler frees the slot
     for (const res of job.clients) res.end();
     fs.promises.rm(job.dir, { recursive: true, force: true }).catch(() => {});
     jobs.delete(id);
+}
+
+// If nobody is listening to an unfinished job for a while, drop it
+function armGrace(id) {
+    const job = jobs.get(id);
+    if (!job || job.state === 'done' || job.state === 'failed') return;
+    clearTimeout(job.graceTimer);
+    job.graceTimer = setTimeout(() => destroyJob(id), DISCONNECT_GRACE_MS);
+}
+
+function release(job) {
+    if (!job.counted) return;
+    job.counted = false;
+    clearTimeout(job.runTimer);
+    running--;
+    scheduleNext();
+}
+
+function finishJob(id, job, event, data) {
+    job.state = event === 'done' ? 'done' : 'failed';
+    emit(job, event, data);
+    clearTimeout(job.graceTimer);
+    job.timer = setTimeout(() => destroyJob(id), JOB_TTL_MS);
+}
+
+function scheduleNext() {
+    let changed = false;
+    while (running < MAX_CONCURRENT && queue.length) {
+        const id = queue.shift();
+        const job = jobs.get(id);
+        if (!job) continue;
+        changed = true;
+        runJob(id, job);
+    }
+    if (changed) broadcastQueue();
 }
 
 function handleLine(job, line, isStderr) {
@@ -118,6 +175,14 @@ app.post('/api/start', async (req, res) => {
         return res.status(400).send('Invalid options');
     }
 
+    let active = 0;
+    for (const j of jobs.values()) {
+        if (j.ip === req.ip && (j.state === 'queued' || j.state === 'running')) active++;
+    }
+    if (active >= MAX_JOBS_PER_IP) {
+        return res.status(429).set('Retry-After', '10').send('You already have a download in progress');
+    }
+
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'downlol-'));
     const jobId = crypto.randomUUID();
 
@@ -143,46 +208,76 @@ app.post('/api/start', async (req, res) => {
     }
     args.push('--', `https://www.youtube.com/watch?v=${id}`);
 
+    if (queue.length >= MAX_QUEUE) {
+        fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+        return res.status(503).set('Retry-After', '15').send('Server is busy, try again in a moment');
+    }
+
     const job = {
-        dir, proc: null, events: [], clients: new Set(),
-        state: 'running', file: null, lastError: null,
+        dir, args, ip: req.ip, proc: null, events: [], clients: new Set(),
+        state: 'queued', file: null, lastError: null, counted: false,
         streamIndex: 0, totalStreams: isAudio ? 1 : 2,
-        timer: setTimeout(() => destroyJob(jobId), JOB_TTL_MS)
+        timer: null, graceTimer: null, runTimer: null
     };
     jobs.set(jobId, job);
+    queue.push(jobId);
+    armGrace(jobId);
+    emit(job, 'queued', { position: queue.length, total: queue.length });
+    scheduleNext();
 
-    const proc = spawn(YTDLP, args);
+    res.json({ id: jobId });
+});
+
+function runJob(id, job) {
+    running++;
+    job.counted = true;
+    job.state = 'running';
+    emit(job, 'started', {});
+
+    const proc = spawn(YTDLP, job.args);
     job.proc = proc;
+    job.runTimer = setTimeout(() => {
+        job.lastError = 'Download timed out';
+        proc.kill('SIGKILL');
+    }, RUN_TIMEOUT_MS);
 
     pipeLines(proc.stdout, l => handleLine(job, l, false));
     pipeLines(proc.stderr, l => handleLine(job, l, true));
 
     proc.on('error', err => {
-        job.state = 'failed';
-        emit(job, 'failed', {
+        finishJob(id, job, 'failed', {
             message: err.code === 'ENOENT' ? 'yt-dlp is not installed or not on PATH' : err.message
         });
+        release(job);
     });
 
     proc.on('close', async (code, signal) => {
-        if (job.state === 'failed' || signal) return;
-        if (code !== 0) {
-            job.state = 'failed';
-            return emit(job, 'failed', {
-                message: job.lastError || `yt-dlp exited with code ${code}`
-            });
+        try {
+            if (job.state === 'failed') return;
+            if (signal) {
+                // killed by timeout
+                if (jobs.has(id)) finishJob(id, job, 'failed', { message: job.lastError || 'Download cancelled' });
+                return;
+            }
+            if (code !== 0) {
+                return finishJob(id, job, 'failed', {
+                    message: job.lastError || `yt-dlp exited with code ${code}`
+                });
+            }
+            const files = (await fs.promises.readdir(job.dir)).filter(f => f !== 'cookies.txt');
+            if (!files.length) return finishJob(id, job, 'failed', { message: 'No file was produced' });
+            job.file = files[0];
+            finishJob(id, job, 'done', { filename: job.file });
+        } finally {
+            release(job);
         }
-        const files = (await fs.promises.readdir(dir)).filter(f => f !== 'cookies.txt');
-        if (!files.length) {
-            job.state = 'failed';
-            return emit(job, 'failed', { message: 'No file was produced' });
-        }
-        job.file = files[0];
-        job.state = 'done';
-        emit(job, 'done', { filename: job.file });
     });
+}
 
-    res.json({ id: jobId });
+app.get('/api/status/:id', (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job) return res.status(404).send('Unknown job');
+    res.json({ state: job.state });
 });
 
 app.get('/api/progress/:id', (req, res) => {
@@ -192,18 +287,23 @@ app.get('/api/progress/:id', (req, res) => {
     res.set({
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        Connection: 'keep-alive'
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no'
     });
     res.flushHeaders();
+    res.write('retry: 3000\n\n');
 
+    clearTimeout(job.graceTimer);
     for (const msg of job.events) res.write(msg);
     job.clients.add(res);
 
+    const ping = setInterval(() => res.write(': ping\n\n'), KEEPALIVE_MS);
+
     req.on('close', () => {
+        clearInterval(ping);
         job.clients.delete(res);
-        if (job.state === 'running' && job.clients.size === 0) {
-            destroyJob(req.params.id);
-        }
+        // Wait a bit for the client to reconnect before dropping the job (frees queue/slot).
+        if (job.clients.size === 0) armGrace(req.params.id);
     });
 });
 
