@@ -4,10 +4,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const YTDLP = process.env.YTDLP_PATH || 'yt-dlp';
+
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
+
+const YTDLP = process.env.YTDLP_PATH || 'yt-dlp';
+
+const COOKIES_SRC = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
+console.log('cookies file:', fs.existsSync(COOKIES_SRC) ? 'found' : 'NOT found');
 
 const VIDEO_FORMATS = ['mp4', 'webm'];
 const AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'wav'];
@@ -119,8 +124,15 @@ app.post('/api/start', async (req, res) => {
     const args = [
         '--no-playlist', '--restrict-filenames', '--no-colors',
         '--newline', '--progress',
+        '--js-runtimes', 'node',
         '-o', path.join(dir, '%(title).80B.%(ext)s')
     ];
+
+    if (fs.existsSync(COOKIES_SRC)) {
+        const cookiesCopy = path.join(dir, 'cookies.txt');
+        fs.copyFileSync(COOKIES_SRC, cookiesCopy);
+        args.push('--cookies', cookiesCopy);
+    }
 
     if (isAudio) {
         args.push('-x', '--audio-format', format,
@@ -160,7 +172,7 @@ app.post('/api/start', async (req, res) => {
                 message: job.lastError || `yt-dlp exited with code ${code}`
             });
         }
-        const files = await fs.promises.readdir(dir);
+        const files = (await fs.promises.readdir(dir)).filter(f => f !== 'cookies.txt');
         if (!files.length) {
             job.state = 'failed';
             return emit(job, 'failed', { message: 'No file was produced' });
