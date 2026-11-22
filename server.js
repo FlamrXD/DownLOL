@@ -124,7 +124,7 @@ app.post('/api/start', async (req, res) => {
     const args = [
         '--no-playlist', '--restrict-filenames', '--no-colors',
         '--newline', '--progress',
-        '--js-runtimes', 'node',
+        '--js-runtimes', 'deno,node',
         '-o', path.join(dir, '%(title).80B.%(ext)s')
     ];
 
@@ -135,11 +135,11 @@ app.post('/api/start', async (req, res) => {
     }
 
     if (isAudio) {
-        args.push('-x', '--audio-format', format,
-                  '--audio-quality', quality === 'best' ? '0' : `${quality}K`);
+        args.push('-f', 'ba/b', '-x', '--audio-format', format,
+                '--audio-quality', quality === 'best' ? '0' : `${quality}K`);
     } else {
         const h = quality === 'best' ? '' : `[height<=${quality}]`;
-        args.push('-f', `bv*${h}+ba/b${h}`, '--merge-output-format', format);
+        args.push('-f', `bv*${h}+ba/b${h}/bv*+ba/b`, '--merge-output-format', format);
     }
     args.push('--', `https://www.youtube.com/watch?v=${id}`);
 
