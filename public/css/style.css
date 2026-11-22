@@ -164,3 +164,27 @@ a:hover{
     color: #ffffff;
     text-decoration: none;
 }
+.socials {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.socials a {
+    display: flex;
+    align-items: center;
+}
+.socials2 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.socials2 a {
+    display: flex;
+    align-items: center;
+}
