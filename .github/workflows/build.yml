@@ -19,7 +19,7 @@ jobs:
             archive_format: zip
           - os: ubuntu-latest
             platform_name: linux-x64
-            archive_format: tar.gz
+            archive_format: zip
 
     steps:
       - name: Checkout repository
@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Ensure your Node version supports SEA
+          node-version: '25' # Requires v25.5.0+ for native --build-sea support
 
       - name: Install dependencies
         run: npm install
@@ -36,7 +36,7 @@ jobs:
       - name: Bundle with esbuild
         run: npx esbuild server.js --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs
 
-      - name: Generate SEA blob and compile executable
+      - name: Build Single Executable Application
         run: node --build-sea sea-config.json
 
       - name: Prepare dist directory (Windows)
@@ -61,7 +61,7 @@ jobs:
       - name: Archive artifacts (Linux)
         if: runner.os == 'Linux'
         run: |
-          tar -czf ${{ matrix.platform_name }}.tar.gz -C dist .
+          zip -r ${{ matrix.platform_name }}.zip dist/
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -69,4 +69,3 @@ jobs:
           name: ${{ matrix.platform_name }}
           path: |
             *.zip
-            *.tar.gz
