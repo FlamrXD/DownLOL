@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '26' # Satisfies the >=26.0.0 requirement of your dependencies
+          node-version: '26'
 
       - name: Install dependencies
         run: npm install
@@ -49,7 +49,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          mv downlol dist/
+          # SEA builds might output 'downlol.exe' or 'downlol' depending on host/config mapping
+          if [ -f "downlol.exe" ]; then
+            mv downlol.exe dist/downlol
+          elif [ -f "downlol" ]; then
+            mv downlol dist/
+          else
+            # Fallback search if name varied
+            mv *.exe dist/downlol || mv downlol* dist/downlol
+          fi
           chmod +x dist/downlol
           cp -r public dist/
 
