@@ -5,18 +5,37 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const yaml = require('js-yaml');
-const baseDir = path.dirname(process.execPath);
+
+// Check if running as a compiled executable (Node.js SEA or pkg)
+const isExecutable = Boolean(
+    process.pkg || 
+    (function() {
+        try {
+            return require('node:sea').isSea();
+        } catch {
+            return false;
+        }
+    })()
+);
+
+const baseDir = isExecutable ? path.dirname(process.execPath) : process.cwd();
+const publicDir = path.join(baseDir, 'public');
+
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
-app.use(express.static(path.join('public')));
+app.use(express.static(publicDir));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(publicDir, 'index.html'));
+});
 
 async function openInBrowser(url) {
   const { default: open } = await import('open');
   return open(url);
 }
 
-const configPath = path.join('config.yml');
+const configPath = path.join(baseDir, 'config.yml');
 
 const defaultConfig = `# Application configuration
 ytdlp_path: yt-dlp
@@ -68,7 +87,7 @@ if (!fs.existsSync(configPath)) {
     fs.writeFileSync(configPath, defaultConfig, 'utf8');
 }
 
-// Load configuration from conf.yml
+// Load configuration from config.yml
 const conf = yaml.load(fs.readFileSync(configPath, 'utf8'));
 const YTDLP = process.env.YTDLP_PATH || conf.ytdlp_path || 'yt-dlp';
 const COOKIES_SRC = process.env.COOKIES_PATH || conf.cookies_path || '/etc/secrets/cookies.txt';
