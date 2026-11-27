@@ -1,0 +1,137 @@
+name: Build and Release SEA
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    name: Bump Version & Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      tag: ${{ steps.version.outputs.TAG }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version and tag
+        id: version
+        run: |
+          NEW_TAG=$(npm version ${{ inputs.bump }} -m "chore(release): %s [skip ci]")
+          echo "TAG=$NEW_TAG" >> $GITHUB_OUTPUT
+          VERSION=${NEW_TAG#v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Push changes and tags
+        run: |
+          git push origin HEAD --follow-tags
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: bump-version
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform_name: windows-x64
+            archive_format: zip
+          - os: ubuntu-latest
+            platform_name: linux-x64
+            archive_format: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bundle with esbuild
+        run: npx esbuild server.js --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs
+
+      - name: Build Single Executable Application
+        run: node --build-sea sea-config.json
+
+      - name: Prepare dist directory (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          move downlol.exe dist/
+          xcopy public dist\public /E /I /Y
+
+      - name: Prepare dist directory (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          if [ -f "downlol.exe" ]; then
+            mv downlol.exe dist/downlol
+          elif [ -f "downlol" ]; then
+            mv downlol dist/
+          else
+            mv *.exe dist/downlol || mv downlol* dist/downlol
+          fi
+          chmod +x dist/downlol
+          cp -r public dist/
+
+      - name: Archive artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.platform_name }}.zip
+
+      - name: Archive artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          zip -r ${{ matrix.platform_name }}.zip dist/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform_name }}
+          path: ${{ matrix.platform_name }}.zip
+
+  release:
+    name: Create GitHub Release
+    needs: [bump-version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.bump-version.outputs.tag }}
+          name: Release ${{ needs.bump-version.outputs.tag }}
+          files: |
+            artifacts/windows-x64/windows-x64.zip
+            artifacts/linux-x64/linux-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
