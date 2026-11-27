@@ -1,0 +1,72 @@
+name: Build and Release SEA
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform_name: windows-x64
+            archive_format: zip
+          - os: ubuntu-latest
+            platform_name: linux-x64
+            archive_format: tar.gz
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Ensure your Node version supports SEA
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bundle with esbuild
+        run: npx esbuild server.js --bundle --platform=node --format=cjs --outfile=dist/bundle.cjs
+
+      - name: Generate SEA blob and compile executable
+        run: node --build-sea sea-config.json
+
+      - name: Prepare dist directory (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          move downlol.exe dist/
+          xcopy public dist\public /E /I /Y
+
+      - name: Prepare dist directory (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          mv downlol dist/
+          chmod +x dist/downlol
+          cp -r public dist/
+
+      - name: Archive artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.platform_name }}.zip
+
+      - name: Archive artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          tar -czf ${{ matrix.platform_name }}.tar.gz -C dist .
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform_name }}
+          path: |
+            *.zip
+            *.tar.gz
