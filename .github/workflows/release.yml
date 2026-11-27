@@ -1,4 +1,4 @@
-name: Build and Release SEA
+name: Build and Release (Manual/SEA)
 
 on:
   workflow_dispatch:

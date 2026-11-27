@@ -1,4 +1,4 @@
-name: Build and Release SEA
+name: Build Nightly (SEA)
 
 on:
   push:
