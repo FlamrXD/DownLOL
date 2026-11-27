@@ -4,31 +4,92 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-
+const yaml = require('js-yaml');
+const baseDir = path.dirname(process.execPath);
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(path.join('public')));
 
-const YTDLP = process.env.YTDLP_PATH || 'yt-dlp';
+async function openInBrowser(url) {
+  const { default: open } = await import('open');
+  return open(url);
+}
 
-const COOKIES_SRC = process.env.COOKIES_PATH || '/etc/secrets/cookies.txt';
+const configPath = path.join('config.yml');
+
+const defaultConfig = `# Application configuration
+ytdlp_path: yt-dlp
+cookies_path: /etc/secrets/cookies.txt
+is_server: false
+
+formats:
+  video:
+    - mp4
+    - webm
+  audio:
+    - mp3
+    - m4a
+    - opus
+    - wav
+
+qualities:
+  video:
+    - best
+    - "1080"
+    - "720"
+    - "480"
+    - "360"
+  audio:
+    - best
+    - "320"
+    - "192"
+    - "128"
+    - "64"
+
+limits:
+  # Max number of jobs running at once
+  max_concurrent: 3
+  # Max number of jobs waiting for a slot
+  max_queue: 10
+  # Max number of jobs per IP (running + queued)
+  max_jobs_per_ip: 1
+
+timeouts_ms:
+  job_ttl: 900000           # 15 * 60 * 1000
+  disconnect_grace: 60000   # 60 * 1000
+  run_timeout: 600000       # 10 * 60 * 1000
+  keepalive: 15000          # 15 * 1000
+`;
+
+// Check and generate config.yml if missing
+if (!fs.existsSync(configPath)) {
+    console.log('config.yml not found. Generating default configuration file...');
+    fs.writeFileSync(configPath, defaultConfig, 'utf8');
+}
+
+// Load configuration from conf.yml
+const conf = yaml.load(fs.readFileSync(configPath, 'utf8'));
+const YTDLP = process.env.YTDLP_PATH || conf.ytdlp_path || 'yt-dlp';
+const COOKIES_SRC = process.env.COOKIES_PATH || conf.cookies_path || '/etc/secrets/cookies.txt';
 console.log('cookies file:', fs.existsSync(COOKIES_SRC) ? 'found' : 'NOT found');
 
-const VIDEO_FORMATS = ['mp4', 'webm'];
-const AUDIO_FORMATS = ['mp3', 'm4a', 'opus', 'wav'];
-const VIDEO_QUALITIES = ['best', '1080', '720', '480', '360'];
-const AUDIO_QUALITIES = ['best', '320', '192', '128', '64'];
-const JOB_TTL_MS = 15 * 60 * 1000;         
-// MAX_CONCURRENT: max number of jobs running at once
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT || 3);
-// MAX_QUEUE: max number of jobs waiting for a slot
-const MAX_QUEUE = Number(process.env.MAX_QUEUE || 10);
-// MAX_JOBS_PER_IP: max number of jobs per IP (running + queued)
-const MAX_JOBS_PER_IP = Number(process.env.MAX_JOBS_PER_IP || 1);
-const DISCONNECT_GRACE_MS = 60 * 1000;
-const RUN_TIMEOUT_MS = 10 * 60 * 1000;
-const KEEPALIVE_MS = 15 * 1000;
+const is_server = conf.is_server ?? false;
+const VIDEO_FORMATS = conf.formats?.video || ['mp4', 'webm'];
+const AUDIO_FORMATS = conf.formats?.audio || ['mp3', 'm4a', 'opus', 'wav'];
+const VIDEO_QUALITIES = conf.qualities?.video || ['best', '1080', '720', '480', '360'];
+const AUDIO_QUALITIES = conf.qualities?.audio || ['best', '320', '192', '128', '64'];
+
+// Limits (with environment variable overrides)
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT || conf.limits?.max_concurrent || 3);
+const MAX_QUEUE = Number(process.env.MAX_QUEUE || conf.limits?.max_queue || 10);
+const MAX_JOBS_PER_IP = Number(process.env.MAX_JOBS_PER_IP || conf.limits?.max_jobs_per_ip || 1);
+
+// Timeouts
+const JOB_TTL_MS = conf.timeouts_ms?.job_ttl || 15 * 60 * 1000;         
+const DISCONNECT_GRACE_MS = conf.timeouts_ms?.disconnect_grace || 60 * 1000;
+const RUN_TIMEOUT_MS = conf.timeouts_ms?.run_timeout || 10 * 60 * 1000;
+const KEEPALIVE_MS = conf.timeouts_ms?.keepalive || 15 * 1000;
 
 const jobs = new Map();
 const queue = [];   // job ids waiting for a slot
@@ -255,7 +316,6 @@ function runJob(id, job) {
         try {
             if (job.state === 'failed') return;
             if (signal) {
-                // killed by timeout
                 if (jobs.has(id)) finishJob(id, job, 'failed', { message: job.lastError || 'Download cancelled' });
                 return;
             }
@@ -302,7 +362,6 @@ app.get('/api/progress/:id', (req, res) => {
     req.on('close', () => {
         clearInterval(ping);
         job.clients.delete(res);
-        // Wait a bit for the client to reconnect before dropping the job (frees queue/slot).
         if (job.clients.size === 0) armGrace(req.params.id);
     });
 });
@@ -314,3 +373,6 @@ app.get('/api/file/:id', (req, res) => {
 });
 
 app.listen(process.env.PORT || 3000, () => console.log('listening'));
+if (is_server === false) {
+    openInBrowser("http://localhost:3000");
+}

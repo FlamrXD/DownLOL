@@ -1,0 +1,42 @@
+# Application configuration
+ytdlp_path: yt-dlp
+cookies_path: /etc/secrets/cookies.txt
+is_server: false
+
+formats:
+  video:
+    - mp4
+    - webm
+  audio:
+    - mp3
+    - m4a
+    - opus
+    - wav
+
+qualities:
+  video:
+    - best
+    - "1080"
+    - "720"
+    - "480"
+    - "360"
+  audio:
+    - best
+    - "320"
+    - "192"
+    - "128"
+    - "64"
+
+limits:
+  # Max number of jobs running at once
+  max_concurrent: 3
+  # Max number of jobs waiting for a slot
+  max_queue: 10
+  # Max number of jobs per IP (running + queued)
+  max_jobs_per_ip: 1
+
+timeouts_ms:
+  job_ttl: 900000           # 15 * 60 * 1000
+  disconnect_grace: 60000   # 60 * 1000
+  run_timeout: 600000       # 10 * 60 * 1000
+  keepalive: 15000          # 15 * 1000
